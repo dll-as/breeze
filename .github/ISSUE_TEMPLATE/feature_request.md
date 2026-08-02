@@ -1,30 +1,20 @@
-name: Feature Request
-description: Suggest a new feature
-title: "[Feature]: "
-labels:
-  - enhancement
+---
+name: Feature request
+about: Suggest an idea for this project
+title: ''
+labels: ''
+assignees: ''
 
-body:
-  - type: textarea
-    id: problem
-    attributes:
-      label: Problem
-    validations:
-      required: true
+---
 
-  - type: textarea
-    id: solution
-    attributes:
-      label: Proposed Solution
-    validations:
-      required: true
+**Is your feature request related to a problem? Please describe.**
+A clear and concise description of what the problem is. Ex. I'm always frustrated when [...]
 
-  - type: textarea
-    id: alternatives
-    attributes:
-      label: Alternatives
+**Describe the solution you'd like**
+A clear and concise description of what you want to happen.
 
-  - type: textarea
-    id: additional
-    attributes:
-      label: Additional Context
+**Describe alternatives you've considered**
+A clear and concise description of any alternative solutions or features you've considered.
+
+**Additional context**
+Add any other context or screenshots about the feature request here.

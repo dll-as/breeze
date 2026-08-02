@@ -22,6 +22,10 @@ func main() {
                 err = runNew(args)
         case "generate", "g":
                 err = runGenerate(args)
+        case "migrate":
+                err = runMigrate(args)
+        case "makemigration":
+                err = runMakeMigration(args)
         case "help", "-h", "--help":
                 printUsage()
                 return
@@ -45,6 +49,8 @@ Usage:
   breeze generate handler <Name> [--methods=list,get,create,update,delete] [--plural=<name>] [--force]
   breeze generate resource <Name> field:type [field:type ...] [--plural=<name>] [--force]
   breeze generate grpc <InterfaceName> [--force]
+  breeze migrate [up|down|status]
+  breeze makemigration <name>
   breeze help
 
 Aliases:
@@ -56,5 +62,8 @@ Examples:
   breeze generate handler Session --methods=list,create
   breeze generate resource User name:string email:string age:int
   breeze generate grpc UserService
+  breeze makemigration CreateUsersTable
+  breeze migrate up
+  breeze migrate status
 `)
 }

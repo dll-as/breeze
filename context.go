@@ -2,6 +2,7 @@ package breeze
 
 import (
         "github.com/goccy/go-json"
+        "github.com/nelthaarion/breeze/binding"
         "github.com/panjf2000/gnet/v2"
 )
 
@@ -232,6 +233,53 @@ func (ctx *Context) Next() {
         if fn != nil {
                 fn(ctx)
         }
+}
+
+// Bind decodes and validates an incoming request into dst using the JSON
+// body, query parameters, and path parameters available on the request, in
+// that order. dst must be a pointer to a struct; see package binding for the
+// supported "json", "form", "param", and "validate" struct tags.
+//
+// On a validation failure, Bind writes a 422 response with an RFC 9457
+// problem+json body describing each failing field and returns the
+// *binding.ValidationError. On any other failure (e.g. malformed JSON body),
+// it writes a 400 problem+json response and returns the underlying error.
+// Callers should treat a non-nil return as "response already written" and
+// return early.
+func (ctx *Context) Bind(dst any) error {
+        sources := []binding.Source{}
+
+        if ctx.Req != nil && len(ctx.Req.Body) > 0 {
+                sources = append(sources, binding.JSONBody(ctx.Req.Body))
+        }
+
+        if ctx.Req != nil && len(ctx.Req.Query) > 0 {
+                sources = append(sources, binding.Query(ctx.Req.Query))
+        }
+
+        if len(ctx.params) > 0 {
+                sources = append(sources, binding.Path(ctx.params))
+        }
+
+        err := binding.Bind(dst, sources...)
+        if err == nil {
+                return nil
+        }
+
+        if verr, ok := err.(*binding.ValidationError); ok {
+                ctx.Status(422)
+                ctx.JSON(verr.ToProblemJSON())
+                return err
+        }
+
+        ctx.Status(400)
+        ctx.JSON(map[string]any{
+                "type":   "about:blank",
+                "title":  "Bad Request",
+                "status": 400,
+                "detail": err.Error(),
+        })
+        return err
 }
 
 func (ctx *Context) Abort() {
