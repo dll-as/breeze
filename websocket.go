@@ -202,7 +202,13 @@ func unmaskXOR(p []byte, key [4]byte) {
 // buildWSFrame encodes a server-to-client frame (never masked per RFC 6455).
 // For small payloads (≤ 125 B) the result fits in a stack buffer.
 func buildWSFrame(opcode byte, payload []byte) []byte {
+        const maxWSPayloadLen = math.MaxInt - 10 // largest header is 10 bytes
+
         payLen := len(payload)
+        if payLen > maxWSPayloadLen {
+                return nil
+        }
+
         var headerSize int
         switch {
         case payLen <= 125:
@@ -213,11 +219,8 @@ func buildWSFrame(opcode byte, payload []byte) []byte {
                 headerSize = 10
         }
 
-        if payLen > math.MaxInt-headerSize {
-                return nil
-        }
-
-        frame := make([]byte, headerSize+payLen)
+        frameLen := headerSize + payLen
+        frame := make([]byte, frameLen)
         frame[0] = 0x80 | opcode // FIN=1
         switch {
         case payLen <= 125:
