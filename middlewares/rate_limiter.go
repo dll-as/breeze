@@ -2,11 +2,23 @@ package middleware
 
 import (
 	"fmt"
+	"net"
 	"sync"
 	"time"
 
 	"github.com/nelthaarion/breeze"
 )
+
+// clientKey returns the request's client IP, stripping the ephemeral source
+// port so repeated requests from the same client on new connections share a
+// counter instead of each getting a fresh one.
+func clientKey(addr string) string {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		return addr
+	}
+	return host
+}
 
 type clientData struct {
 	lastRequest time.Time
@@ -53,8 +65,8 @@ func NewRateLimiter(opts RateLimiterOptions) breeze.HandlerFunc {
 	}
 
 	return func(ctx *breeze.Context) {
-		// Use IP as key (Conn.RemoteAddr).
-		clientIP := ctx.Conn.RemoteAddr().String()
+		// Use IP as key (port stripped so reconnects share a counter).
+		clientIP := clientKey(ctx.Conn.RemoteAddr().String())
 
 		// ── Critical section: map lookup + counter update only ──────────
 		// The lock is held for microseconds, never across ctx.Next().
