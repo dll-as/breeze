@@ -24,7 +24,7 @@ func writeSession(ctx *breeze.Context, cfg *Config, user *User, tok *Token) erro
 		}
 		value = jwtStr
 	default: // SessionModeCookie
-		payload, err := encodeCookieSession(user, tok)
+		payload, err := encodeCookieSession(user, tok, cfg.SessionTTL)
 		if err != nil {
 			return err
 		}
