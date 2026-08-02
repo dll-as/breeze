@@ -64,6 +64,16 @@ func Callback(cfg Config) breeze.HandlerFunc {
 			return
 		}
 
+		// (3b) If the provider returned an id_token, verify its nonce claim
+		// matches the one we issued for this flow (ID token replay protection).
+		if tok.IDToken != "" {
+			nonce, err := idTokenNonce(tok.IDToken)
+			if err != nil || subtle.ConstantTimeCompare([]byte(nonce), []byte(fs.Nonce)) != 1 {
+				fail(ctx, c, 401, ErrNonceMismatch)
+				return
+			}
+		}
+
 		// (4) Fetch + normalize the user profile.
 		user, err := c.driver.UserInfo(reqCtx, c, tok)
 		if err != nil {
