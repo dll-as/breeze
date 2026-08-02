@@ -63,17 +63,19 @@ func parseJWT(cfg *Config, raw string) (*sessionClaims, error) {
 // is signed by the caller (signedValue) so it is tamper-proof; it is not
 // encrypted, so it must not carry secrets beyond the OAuth tokens the app
 // already trusts the client to hold.
-func encodeCookieSession(user *User, tok *Token) (string, error) {
+func encodeCookieSession(user *User, tok *Token, ttl time.Duration) (string, error) {
 	blob := struct {
 		User  *User  `json:"user"`
 		Token *Token `json:"token"`
 		Exp   int64  `json:"exp"`
-	}{User: user, Token: tok}
+	}{User: user, Token: tok, Exp: time.Now().Add(ttl).Unix()}
 	b, err := json.Marshal(blob)
 	return string(b), err
 }
 
-// decodeCookieSession parses a SessionModeCookie payload.
+// decodeCookieSession parses a SessionModeCookie payload, rejecting it once
+// past Exp so a captured cookie cannot be replayed past its session TTL even
+// if the Max-Age/Expires cookie attributes are stripped by the client.
 func decodeCookieSession(payload string) (*User, *Token, error) {
 	var blob struct {
 		User  *User  `json:"user"`
@@ -84,6 +86,9 @@ func decodeCookieSession(payload string) (*User, *Token, error) {
 		return nil, nil, err
 	}
 	if blob.User == nil {
+		return nil, nil, ErrNoSession
+	}
+	if blob.Exp != 0 && time.Now().Unix() > blob.Exp {
 		return nil, nil, ErrNoSession
 	}
 	return blob.User, blob.Token, nil
