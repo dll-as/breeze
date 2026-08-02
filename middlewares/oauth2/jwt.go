@@ -59,6 +59,20 @@ func parseJWT(cfg *Config, raw string) (*sessionClaims, error) {
 	return claims, nil
 }
 
+// idTokenNonce extracts the "nonce" claim from an id_token without verifying
+// its signature. The token was already retrieved directly from the
+// provider's token endpoint over TLS (back-channel), not passed through the
+// browser, so this is used purely to check the nonce we issued was echoed
+// back — it is not a substitute for full id_token signature verification.
+func idTokenNonce(idToken string) (string, error) {
+	claims := jwt.MapClaims{}
+	if _, _, err := jwt.NewParser().ParseUnverified(idToken, claims); err != nil {
+		return "", err
+	}
+	nonce, _ := claims["nonce"].(string)
+	return nonce, nil
+}
+
 // encodeCookieSession serializes the User+Token for SessionModeCookie. The blob
 // is signed by the caller (signedValue) so it is tamper-proof; it is not
 // encrypted, so it must not carry secrets beyond the OAuth tokens the app
