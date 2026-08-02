@@ -49,4 +49,8 @@ var (
 
 	// ErrExpiredState is returned when a stored state/PKCE cookie has expired.
 	ErrExpiredState = errors.New("oauth2: state expired")
+
+	// ErrNonceMismatch is returned when the id_token's nonce claim does not
+	// match the nonce issued for the flow (ID token replay protection).
+	ErrNonceMismatch = errors.New("oauth2: nonce mismatch")
 )
