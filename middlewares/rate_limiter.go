@@ -20,6 +20,12 @@ type RateLimiterOptions struct {
 	Message  string        // optional message on limit
 }
 
+// staleAfter is how long a client entry may sit idle before prune() evicts it.
+const staleAfter = 10 * time.Minute
+
+// pruneInterval is how often prune() sweeps the clients map.
+const pruneInterval = time.Minute
+
 // RateLimiter holds the per-client counters and the pre-formatted limit
 // message so the hot path never calls fmt.Sprintf.
 type RateLimiter struct {
@@ -27,6 +33,23 @@ type RateLimiter struct {
 	clients  map[string]*clientData
 	mu       sync.Mutex
 	limitMsg string // FIX: pre-computed to avoid fmt.Sprintf on every 429
+}
+
+// prune periodically evicts clients that haven't made a request in a while,
+// so the map doesn't grow without bound over the life of the process.
+func (rl *RateLimiter) prune() {
+	ticker := time.NewTicker(pruneInterval)
+	defer ticker.Stop()
+	for range ticker.C {
+		cutoff := time.Now().Add(-staleAfter)
+		rl.mu.Lock()
+		for key, data := range rl.clients {
+			if data.lastRequest.Before(cutoff) {
+				delete(rl.clients, key)
+			}
+		}
+		rl.mu.Unlock()
+	}
 }
 
 // NewRateLimiter returns a rate limiting middleware.
@@ -51,6 +74,8 @@ func NewRateLimiter(opts RateLimiterOptions) breeze.HandlerFunc {
 	} else {
 		rl.limitMsg = opts.Message
 	}
+
+	go rl.prune()
 
 	return func(ctx *breeze.Context) {
 		// Use IP as key (Conn.RemoteAddr).
