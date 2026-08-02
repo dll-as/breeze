@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/nelthaarion/breeze"
 )
 
@@ -454,6 +455,35 @@ func TestExchangeAndUserInfo(t *testing.T) {
 	}
 	if u.Email != "u@example.com" {
 		t.Fatalf("user = %+v", u)
+	}
+}
+
+// ---- ID token nonce ----
+
+func TestIDTokenNonceExtractsClaim(t *testing.T) {
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{"nonce": "abc123"})
+	signed, err := token.SignedString([]byte("any-secret"))
+	if err != nil {
+		t.Fatalf("sign: %v", err)
+	}
+	got, err := idTokenNonce(signed)
+	if err != nil {
+		t.Fatalf("idTokenNonce: %v", err)
+	}
+	if got != "abc123" {
+		t.Fatalf("nonce = %q, want abc123", got)
+	}
+}
+
+func TestIDTokenNonceMissingClaim(t *testing.T) {
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{})
+	signed, _ := token.SignedString([]byte("any-secret"))
+	got, err := idTokenNonce(signed)
+	if err != nil {
+		t.Fatalf("idTokenNonce: %v", err)
+	}
+	if got != "" {
+		t.Fatalf("nonce = %q, want empty", got)
 	}
 }
 
