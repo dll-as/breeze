@@ -4,7 +4,58 @@ All changes made to the Breeze framework.
 
 ---
 
+## [v1.5.0] — OAuth2 / Social Login
+
+### New Features
+
+#### OAuth2 Authentication (`middlewares/oauth2`)
+
+A new, zero-config OAuth2 / OpenID Connect middleware package that adds
+social login with only `ClientID` and `ClientSecret` required — every other
+setting has a secure default.
+
+- **Four providers out of the box**: Google, GitHub, Microsoft, and Discord.
+  Each is a self-registering `ProviderDriver` (via `init()`) that normalizes
+  the provider's profile into a common `User` (stable `ID`, `Email`, `Name`,
+  `Username`, `Avatar`, `Provider`) and handles its own quirks — Google
+  offline-access consent, GitHub private-email fallback via `/user/emails` +
+  numeric id, Microsoft `common` tenant with scope echo on the token request,
+  and Discord avatar-hash → CDN URL expansion.
+- **Six composable middlewares**: `Login`, `Callback`, `Auth`, `Optional`,
+  `Refresh`, and `Logout`, plus context accessors `CurrentUser`,
+  `CurrentToken`, `IsAuthenticated` (with `UserFrom` / `TokenFrom` aliases).
+- **Secure by default**:
+  - **PKCE** (S256) enabled for every provider.
+  - **CSRF protection** — the `state` is stored in a signed, short-lived,
+    single-use cookie and compared in constant time; the flow cookie is
+    cleared on the callback so a state can never be replayed.
+  - **Signed, HttpOnly, `SameSite=Lax` cookies**; `Secure` auto-enables for
+    `https://` origins.
+  - **Open-redirect guard** — `?redirect=` overrides accept same-site paths
+    only (absolute and protocol-relative URLs are rejected).
+  - **Algorithm-pinned HS256 JWTs** to prevent `alg=none` / algorithm-confusion
+    attacks.
+  - **Bounded provider calls** — every outbound token/userinfo request runs
+    under a timeout so a slow provider can't pin a worker goroutine.
+- **Two session modes** (`Config.SessionMode`): `SessionModeCookie` (default,
+  signed HMAC cookie) and `SessionModeJWT`. Every write **rotates** the
+  session so a pre-login cookie can't be reused post-login.
+- **Transparent token refresh** — the `Refresh` middleware renews an expiring
+  access token using the stored refresh token and rotates the session cookie,
+  layered in front of `Auth`.
+- **Shared pooled HTTP client** across all provider calls for connection reuse,
+  overridable via `Config.HTTPClient` (injected in tests).
+- **Tested**: the suite drives the full `Login → Callback → Auth` flow against
+  an in-process mock provider, plus PKCE, cookie signing, JWT tamper-rejection,
+  state expiry, config defaults, open-redirect protection, and concurrent
+  registry access. Passes `go test -race`; `go vet` clean; benchmarks included.
+
+See `middlewares/oauth2/README.md` for full documentation.
+
+---
+
 ## [v.1.4.1] — Performance Improvements & gRPC Codegen
+
 
 ### New Features
 

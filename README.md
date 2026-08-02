@@ -37,10 +37,12 @@ efficiently while keeping your code clean and maintainable.
     - [Built-in OpenAPI / Scalar](#-built-in-openapi--scalar)
     - [gRPC Code Generation](#-grpc-code-generation)
   - [Production Middleware](#-production-middleware)
+  - [OAuth2 / Social Login](#-oauth2--social-login)
   - [Built-in Developer Dashboard](#-built-in-developer-dashboard)
   - [Developer Experience](#-developer-experience)
   - [Performance Optimizations](#-performance-optimizations)
 - [Support the Project](#-support-the-project)
+
 - [Contributing](#-contributing)
 - [Security Scanning](#-security-scanning)
 - [License](#license)
@@ -235,10 +237,48 @@ Supported field types: `string`, `int`, `int64`, `float64`, `bool`, `time.Time`.
 - 📝 Request Logger
 - 💥 Panic Recovery
 
+### 🔐 OAuth2 / Social Login
+
+Zero-config OAuth2 / OpenID Connect login under `middlewares/oauth2` — only
+`ClientID` and `ClientSecret` are required, everything else has a secure default.
+
+
+- 🌐 Four providers out of the box: **Google, GitHub, Microsoft, Discord**
+- 🔑 PKCE (S256) enabled by default for every provider
+- 🛡 CSRF-protected `state` — signed, short-lived, single-use, constant-time compared
+- 🍪 Signed, HttpOnly, `SameSite=Lax` cookies (or algorithm-pinned HS256 JWT sessions)
+- 🔄 Transparent access-token refresh with session rotation
+- 👤 Normalized provider-independent `User` (id, email, name, username, avatar)
+- 🧩 Six composable middlewares: `Login`, `Callback`, `Auth`, `Optional`, `Refresh`, `Logout`
+- 🚫 Open-redirect guard on post-login redirects
+
+```go
+import "github.com/nelthaarion/breeze/middlewares/oauth2"
+
+cfg := oauth2.Config{
+    Provider:     oauth2.Google,
+    ClientID:     "your-client-id",
+    ClientSecret: "your-client-secret",
+    BaseURL:      "https://app.example.com",
+    CookieSecret: "a-long-random-secret",
+}
+
+router.Handle(breeze.GET, "/auth/google", oauth2.Login(cfg))
+router.Handle(breeze.GET, "/auth/google/callback", oauth2.Callback(cfg))
+router.Handle(breeze.GET, "/dashboard", dashboard, oauth2.Auth(cfg))
+
+func dashboard(ctx *breeze.Context) {
+    ctx.JSON(oauth2.CurrentUser(ctx)) // *oauth2.User
+}
+```
+
+See [`middlewares/oauth2/README.md`](./middlewares/oauth2/README.md) for full documentation.
+
 ### 📊 Built-in Developer Dashboard
 
 - 🔧 Native module under `/dashboard` (zero-overhead when disabled)
 - 📈 Real-time overview: RPS, latency, memory, goroutines, CPU
+
 - 🛣 Routes Explorer with per-route latency stats
 - 🧪 API Explorer with multi-language code generation (curl / Go / JS / Python / C# / PHP)
 - 📡 Live Requests feed with WebSocket push
