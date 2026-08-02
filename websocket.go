@@ -5,6 +5,7 @@ import (
         "encoding/base64"
         "encoding/binary"
         "errors"
+        "math"
         "sync"
         "sync/atomic"
 
@@ -212,6 +213,10 @@ func buildWSFrame(opcode byte, payload []byte) []byte {
                 headerSize = 10
         }
 
+        if payLen > math.MaxInt-headerSize {
+                return nil
+        }
+
         frame := make([]byte, headerSize+payLen)
         frame[0] = 0x80 | opcode // FIN=1
         switch {
@@ -249,6 +254,9 @@ func (wc *WSConn) Send(opcode byte, payload []byte) error {
                 return errors.New("websocket: connection closed")
         }
         frame := buildWSFrame(opcode, payload)
+        if frame == nil {
+                return errors.New("websocket: payload too large")
+        }
         return wc.conn.AsyncWrite(frame, nil)
 }
 
