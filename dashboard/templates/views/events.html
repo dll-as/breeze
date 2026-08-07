@@ -1,0 +1,43 @@
+{{define "content"}}
+<div id="ev-not-attached" class="ev-warn" style="display:none">
+  No event bus is attached. Call
+  <code>observability.Attach(bus, collector)</code>
+  during startup to stream dispatches into the dashboard.
+</div>
+
+<div class="cards" id="ev-totals"></div>
+
+<div class="table-wrap">
+  <div class="table-head">
+    <h3>Recent Dispatches (<span id="ev-count">0</span>)</h3>
+    <div class="filters">
+      <input id="ev-search" placeholder="Search event, source, error...">
+      <label class="chk"><input type="checkbox" id="ev-failed-only"> Failed only</label>
+    </div>
+  </div>
+  <div class="table-scroll">
+    <table>
+      <thead><tr><th>Time</th><th>Event</th><th>Source</th><th>Duration</th><th>Listeners</th><th>Result</th><th>Error</th><th>Payload</th></tr></thead>
+      <tbody id="ev-tbody"></tbody>
+    </table>
+  </div>
+</div>
+
+<div id="ev-detail"></div>
+
+<div class="table-wrap" style="margin-top:16px">
+  <div class="table-head"><h3>Top Events</h3></div>
+  <div class="table-scroll">
+    <table>
+      <thead><tr><th>Event</th><th>Dispatches</th><th>Listeners Run</th><th>Failed</th><th>Avg</th><th>Max</th><th>Failure Rate</th><th>Last</th></tr></thead>
+      <tbody id="ev-metrics-tbody"></tbody>
+    </table>
+  </div>
+</div>
+
+<script>window.__breezeDashPage='events';</script>
+<script data-spa-run="always">
+if(window.BreezeDash) BreezeDash.initPage('events');
+BreezeDash.initPage('events');
+</script>
+{{end}}

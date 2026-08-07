@@ -81,8 +81,18 @@ type Bus struct {
 
 	recorder *recorder
 
+	// obs holds the optional observability hook. A nil pointer means no
+	// observer is attached, which is the case the dispatch fast path is
+	// tuned for: one atomic load and a nil check per dispatch.
+	obs atomic.Pointer[Observer]
+
+	// obsPayload records whether the observer asked to receive event
+	// payloads, which costs one interface boxing per dispatch.
+	obsPayload atomic.Bool
+
 	eventSeq    atomic.Uint64
 	listenerSeq atomic.Uint64
+
 
 	closed atomic.Bool
 }

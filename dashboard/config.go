@@ -74,6 +74,13 @@ type Config struct {
         // MaxLogs is the rolling window size for each log tab.
         MaxLogs int `yaml:"max_logs" json:"max_logs"`
 
+        // EventCapacity is how many event dispatches the Events page
+        // retains. It only takes effect if AttachEvents is called; a
+        // dashboard with no event bus attached allocates nothing for it.
+        // Defaults to 500.
+        EventCapacity int `yaml:"event_capacity" json:"event_capacity"`
+
+
         // MaxTimelineEntries caps the number of timeline entries retained
         // per request to bound memory usage for long-lived requests.
         MaxTimelineEntries int `yaml:"max_timeline_entries" json:"max_timeline_entries"`

@@ -6,7 +6,9 @@ import (
         "time"
 
         "github.com/nelthaarion/breeze"
+        "github.com/nelthaarion/breeze/observability"
 )
+
 
 // Collector is the central aggregation point for every dashboard signal.
 //
@@ -78,6 +80,13 @@ type Collector struct {
 
         // Database inspector used by the database browser.
         dbInspector DBInspector
+
+        // Event observability. eventCol is nil until the application calls
+        // AttachEvents; every read path tolerates that, so a dashboard
+        // without the event system wired up costs nothing. See events.go.
+        eventsMu sync.RWMutex
+        eventCol *observability.Collector
+
 
         // Database writer used by the database browser's CRUD UI. Optional —
         // nil means the Database Browser stays read-only regardless of

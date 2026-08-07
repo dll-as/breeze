@@ -500,19 +500,28 @@ Benchmarked on `11th Gen Intel Core i5-11400F @ 2.60GHz`:
 
 | Scenario | ns/op | B/op | allocs/op |
 |----------|-------|------|-----------|
-| Emit (1 listener) | 208 | 152 | 3 |
-| Emit (10 listeners) | 421 | 152 | 3 |
-| Emit (100 listeners) | 1,987 | 152 | 3 |
-| Emit (1000 listeners) | 18,861 | 152 | 3 |
-| Emit (no listeners) | **11.6** | 0 | 0 |
-| Recorder enabled | 422 | 152 | 3 |
-| Metrics disabled | 382 | 152 | 3 |
-| Context metadata (unused) | 253 | 152 | 3 |
-| Context metadata (used) | 468 | 488 | 5 |
+| Emit (1 listener) | 598 | 152 | 3 |
+| Emit (10 listeners) | 1,032 | 152 | 3 |
+| Emit (100 listeners) | 6,519 | 152 | 3 |
+| Emit (1000 listeners) | 50,968 | 152 | 3 |
+| Emit (no listeners) | **31.8** | 0 | 0 |
+| Emit parallel (1 listener) | 408 | 152 | 3 |
+| Emit with priorities (100) | 7,070 | 152 | 3 |
+| Emit filtered (none match) | 7,222 | 152 | 3 |
+| Recorder disabled | 882 | 152 | 3 |
+| Recorder enabled | 935 | 152 | 3 |
+| Recorder enabled (payload) | 1,387 | 152 | 3 |
+| Middleware x3 | 2,914 | 248 | 7 |
+| Async goroutine (1 listener) | 2,407 | 249 | 3 |
+| Async worker pool (1 listener) | 2,555 | 248 | 3 |
+| Context metadata (unused) | 1,065 | 152 | 3 |
+| Context metadata (used) | 2,022 | 488 | 5 |
 
-Emitting an event nobody listens to costs **11.6 ns** — a map lookup and an atomic load, with zero allocations.
+Reproduce with `go test -run=^$ -bench=. -benchmem ./events`. Absolute numbers move with hardware and load; the ratios are the useful part.
 
-Allocation is flat at **152 bytes / 3 allocs** regardless of listener count, because the Context is pooled and listeners execute against a pre-sorted snapshot.
+Emitting an event nobody listens to costs **31.8 ns** with zero allocations — a map lookup and an atomic load.
+
+Allocation is flat at **152 bytes / 3 allocs** from 1 to 1000 listeners, because the Context is pooled and listeners execute against a pre-sorted snapshot. Per-listener cost grows linearly while the allocation profile stays constant.
 
 ## Thread Safety
 
@@ -652,7 +661,7 @@ Coverage:
 go test -cover ./events/
 ```
 
-The test suite includes 52 tests covering:
+The test suite covers:
 - Synchronous and asynchronous dispatch
 - Priorities and phases
 - Filters and once-listeners
@@ -660,10 +669,11 @@ The test suite includes 52 tests covering:
 - Middleware and cancellation
 - Metadata and context propagation
 - Concurrent registration and dispatch
+- Worker-pool overflow policies (block, drop, spawn)
 - Recorder and metrics
 - Framework events
 
-Coverage: **79.3%**
+Coverage: **96.7%** of statements, clean under `-race`.
 
 ## License
 

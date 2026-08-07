@@ -154,7 +154,9 @@ func (c *Collector) registerRoutes(router *breeze.Router, app *breeze.Breeze) {
                         "overview", "routes", "api", "requests",
                         "cache", "logs",
                         "health", "performance", "timeline", "architecture",
+                        "events",
                 }
+
 
                 // Index route — auth + render overview
                 router.Handle(breeze.GET, base, func(ctx *breeze.Context) {
@@ -195,16 +197,18 @@ func (c *Collector) registerRoutes(router *breeze.Router, app *breeze.Breeze) {
         router.Handle(breeze.GET, api+"/timeline", c.wrap(auth, c.handleTimelineList))
         router.Handle(breeze.GET, api+"/timeline/:id", c.wrap(auth, c.handleTimelineGet))
         router.Handle(breeze.GET, api+"/architecture", c.wrap(auth, c.handleArchitecture))
+        router.Handle(breeze.GET, api+"/events", c.wrap(auth, c.handleEvents))
+
                 router.Handle(breeze.GET, api+"/db/tables", c.wrap(auth, c.handleDBTables))
                 router.Handle(breeze.GET, api+"/db/tables/:name", c.wrap(auth, c.handleDBTableData))
                 router.Handle(breeze.POST, api+"/db/tables/:name/rows", c.wrap(auth, c.handleDBTableInsert))
                 router.Handle(breeze.PUT, api+"/db/tables/:name/rows/:pk", c.wrap(auth, c.handleDBTableUpdate))
                 router.Handle(breeze.DELETE, api+"/db/tables/:name/rows/:pk", c.wrap(auth, c.handleDBTableDelete))
 
-        // ── WebSocket endpoint for real-time updates ──────────────────────────
-        if app != nil {
-                app.WebSocket(base+"/ws", &wsHandler{hub: c.hub})
-        }
+	// ── WebSocket endpoint for real-time updates ──────────────────────────
+	if app != nil {
+		app.WebSocket(base+"/ws", &wsHandler{hub: c.hub})
+	}
 }
 
 // viewData builds the template data passed to every dashboard view.
@@ -232,7 +236,9 @@ func pageLabelFor(page string) string {
                 "performance": "Performance",
                 "timeline":    "Timeline",
                 "architecture": "Architecture",
+                "events":      "Events",
         }
+
         if t, ok := titles[page]; ok {
                 return t
         }

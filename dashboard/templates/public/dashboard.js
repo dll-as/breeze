@@ -18,7 +18,12 @@ var S = {
   logs: {app:[], http:[], error:[], panic:[], warning:[]},
   logTab: 'app',
   routes: [],
+  events: [],
+  eventsMeta: null,
+  eventFilter: {q:'', failedOnly:false},
+  eventSel: null,
   apiRoutes: [],
+
   apiRouteSel: null,
   apiResp: null,
   apiSnippetLang: 'curl',
@@ -151,10 +156,19 @@ function connectWS(){
       if(S.history.length>120) S.history.shift();
       S.history.push(msg.metrics);
       if(S.page==='overview') renderOverview();
+    } else if(msg.type==='batch'){
+      // The hub batches live records into one frame every 100ms. Each
+      // entry carries its own channel, so unwrap and dispatch each one.
+      if(msg.events && msg.events.length){
+        for(var i=0;i<msg.events.length;i++){
+          onEvent(msg.events[i].channel, msg.events[i].data);
+        }
+      }
     } else if(msg.type==='event'){
       onEvent(msg.channel, msg.data);
     }
   };
+
 }
 function updateWSIndicator(){
   var dot = $('#ws-dot');
@@ -177,8 +191,13 @@ function onEvent(ch, data){
     S.timelines.unshift(data);
     if(S.timelines.length>50) S.timelines.pop();
     if(S.page==='timeline') renderTimelineList();
+  } else if(ch==='event'){
+    S.events.unshift(data);
+    if(S.events.length>500) S.events.pop();
+    if(S.page==='events') renderEvents();
   }
 }
+
 
 // ─── Page initialization ───────────────────────────────────────────────
 var PAGES = {
@@ -192,7 +211,9 @@ var PAGES = {
   performance: {title:'Performance', init: initPerformance},
   timeline: {title:'Timeline', init: initTimeline},
   architecture: {title:'Architecture', init: initArchitecture},
+  events: {title:'Events', init: initEvents},
 };
+
 
 function initPage(page){
   S.page = page;
@@ -1028,8 +1049,148 @@ function renderArchitecture(){
   cards.innerHTML = html;
 }
 
+// ─── Events ────────────────────────────────────────────────────────────
+function initEvents(){
+  loadEvents();
+  var s = $('#ev-search');
+  if(s) s.addEventListener('input', function(){S.eventFilter.q=s.value; renderEvents(); s.focus();});
+  var fo = $('#ev-failed-only');
+  if(fo) fo.addEventListener('change', function(){S.eventFilter.failedOnly=fo.checked; renderEvents();});
+  setInterval(function(){ if(S.page==='events') loadEvents(); }, 10000);
+}
+function loadEvents(){
+  api('events?limit=200').then(function(d){
+    S.eventsMeta = d;
+    // Merge: keep live WS rows that are newer than the API snapshot, then
+    // prepend the snapshot's rows. WS rows carry the same shape, so a
+    // dedupe by id keeps the list stable while filtering.
+    var byId = {};
+    (d.recent||[]).forEach(function(r){byId[r.id]=r;});
+    S.events.forEach(function(r){ if(!byId[r.id]) byId[r.id]=r; });
+    var merged = [];
+    for(var k in byId) merged.push(byId[k]);
+    merged.sort(function(a,b){return b.id-a.id;});
+    S.events = merged.slice(0,500);
+    renderEvents();
+  }).catch(function(){});
+}
+function renderEvents(){
+  var meta = S.eventsMeta;
+  var tc = $('#ev-totals');
+  if(tc){
+    var t = (meta&&meta.totals)||{};
+    tc.innerHTML =
+      '<div class="card"><div class="label">Dispatches</div><div class="value">'+fmtNum(t.signals)+'</div></div>'+
+      '<div class="card"><div class="label">Listeners Run</div><div class="value">'+fmtNum(t.listeners)+'</div></div>'+
+      '<div class="card"><div class="label">Failed</div><div class="value" style="color:var(--err)">'+fmtNum(t.failed)+'</div></div>'+
+      '<div class="card"><div class="label">Distinct Events</div><div class="value">'+fmtNum(t.distinct_events)+'</div></div>'+
+      '<div class="card"><div class="label">Rate / sec</div><div class="value">'+fmtNum(t.rate_per_sec,1)+'</div></div>'+
+      '<div class="card"><div class="label">Dropped</div><div class="value" style="color:var(--yellow)">'+fmtNum(t.dropped)+'</div></div>';
+  }
+
+  var attached = meta ? !!meta.attached : true;
+  var na = $('#ev-not-attached');
+  if(na){
+    if(attached) na.style.display='none';
+    else na.style.display='block';
+  }
+
+  var list = S.events.slice();
+  var q = (S.eventFilter.q||'').toLowerCase();
+  if(q) list = list.filter(function(e){return (e.name||'').toLowerCase().indexOf(q)>=0 || (e.source||'').toLowerCase().indexOf(q)>=0 || (e.error||'').toLowerCase().indexOf(q)>=0;});
+  if(S.eventFilter.failedOnly) list = list.filter(function(e){return e.failed;});
+  var c = $('#ev-count');
+  if(c) c.textContent = list.length;
+
+  var html = '';
+  list.slice(0,200).forEach(function(e){
+    var cls = e.failed ? 'red' : (e.cancelled ? 'yellow' : (e.async ? 'blue' : 'green'));
+    html += '<tr data-id="'+e.id+'">'+
+      '<td style="font-family:var(--mono);font-size:11px;color:var(--text-dim)">'+fmtTime(e.time)+'</td>'+
+      '<td style="font-family:var(--mono);font-size:11px;max-width:280px;overflow:hidden;text-overflow:ellipsis">'+escapeHTML(e.name)+'</td>'+
+      '<td style="font-size:11px;color:var(--text-dim)">'+escapeHTML(e.source||'-')+'</td>'+
+      '<td>'+fmtMS(e.duration_ms)+'</td>'+
+      '<td>'+fmtNum(e.listeners)+'</td>'+
+      '<td><span class="badge '+cls+'">'+(e.failed?'failed':(e.cancelled?'cancelled':(e.async?'async':'ok')))+'</span></td>'+
+      '<td style="font-size:11px;color:var(--err);max-width:200px;overflow:hidden;text-overflow:ellipsis">'+escapeHTML(e.error||'')+'</td>'+
+      '<td style="font-size:11px;color:var(--text-dim);max-width:160px;overflow:hidden;text-overflow:ellipsis">'+escapeHTML(e.payload||'')+'</td>'+
+      '</tr>';
+  });
+  if(!list.length) html = '<tr><td colspan="8" class="empty">No events'+(attached?' yet':' — attach an event bus first')+'</td></tr>';
+  var tb = $('#ev-tbody');
+  if(tb){
+    tb.innerHTML = html;
+    // Clicking a row opens the per-listener breakdown below the table.
+    $$('#ev-tbody tr[data-id]').forEach(function(tr){
+      tr.style.cursor = 'pointer';
+      tr.addEventListener('click', function(){
+        var id = Number(tr.getAttribute('data-id'));
+        S.eventSel = (S.eventSel===id) ? null : id;
+        renderEvents();
+      });
+    });
+  }
+
+
+  // ── Detail pane for the selected dispatch ──
+  var detail = $('#ev-detail');
+  if(detail){
+    var sel = S.eventSel;
+    var target = sel!=null ? S.events.find(function(e){return e.id===sel;}) : null;
+    if(target){
+      var dhtml = '<div class="chart-card"><div class="head"><h3>'+escapeHTML(target.name)+'</h3><button id="ev-close">Close</button></div>'+
+        '<div class="ev-meta">'+
+          '<div><span>ID</span>'+target.id+'</div>'+
+          '<div><span>Source</span>'+escapeHTML(target.source||'-')+'</div>'+
+          '<div><span>Started</span>'+fmtTime(target.time)+'</div>'+
+          '<div><span>Duration</span>'+fmtMS(target.duration_ms)+'</div>'+
+          '<div><span>Listeners</span>'+fmtNum(target.listeners)+'</div>'+
+          (target.request_id?'<div><span>Request</span>'+escapeHTML(target.request_id)+'</div>':'')+
+        '</div>'+
+        (target.payload?'<div class="ev-payload"><span>payload</span><pre>'+escapeHTML(target.payload)+'</pre></div>':'')+
+        '<div class="ev-spans"><div class="head2">Execution order</div>';
+      (target.spans||[]).forEach(function(sp, i){
+        var scls = sp.failed?'red':(sp.panicked?'red':(sp.stopped?'yellow':(sp.skipped?'gray':'green')));
+        dhtml += '<div class="ev-span"><span class="idx">'+(i+1)+'</span>'+
+          '<span class="name">'+escapeHTML(sp.name)+'</span>'+
+          '<span class="phase">'+escapeHTML(sp.phase||'normal')+'</span>'+
+          '<span class="prio">p'+sp.priority+'</span>'+
+          '<span class="dur">'+fmtMS(sp.duration_ms)+'</span>'+
+          '<span class="badge '+scls+'">'+(sp.failed?'failed':(sp.panicked?'panic':(sp.stopped?'stopped':(sp.skipped?'skipped':'ok'))))+'</span>'+
+          (sp.error?'<span class="err">'+escapeHTML(sp.error)+'</span>':'')+
+          '</div>';
+      });
+      if(!target.spans || !target.spans.length) dhtml += '<div class="empty">No listener detail</div>';
+      dhtml += '</div></div>';
+      detail.innerHTML = dhtml;
+      var cl = $('#ev-close');
+      if(cl) cl.addEventListener('click', function(){S.eventSel=null; detail.innerHTML='';});
+    } else {
+      detail.innerHTML = '';
+    }
+  }
+
+  // ── Top events table ──
+  var mrows = (meta&&meta.metrics)||[];
+  var mhtml = '';
+  mrows.slice(0,20).forEach(function(m){
+    var fcls = m.failure_rate>0.05?'red':(m.failure_rate>0?'yellow':'green');
+    mhtml += '<tr><td style="font-family:var(--mono);font-size:11px">'+escapeHTML(m.name)+'</td>'+
+      '<td>'+fmtNum(m.count)+'</td>'+
+      '<td>'+fmtNum(m.executed)+'</td>'+
+      '<td>'+fmtNum(m.failed)+'</td>'+
+      '<td>'+fmtMS(m.avg_ms)+'</td>'+
+      '<td>'+fmtMS(m.max_ms)+'</td>'+
+      '<td><span class="badge '+fcls+'">'+fmtNum(m.failure_rate*100,1)+'%</span></td>'+
+      '<td style="font-size:11px;color:var(--text-dim)">'+(m.last?fmtDate(m.last):'-')+'</td></tr>';
+  });
+  if(!mrows.length) mhtml = '<tr><td colspan="8" class="empty">No metrics yet</td></tr>';
+  var mtb = $('#ev-metrics-tbody');
+  if(mtb) mtb.innerHTML = mhtml;
+}
 // ─── Canvas charts ─────────────────────────────────────────────────────
 function drawLineChart(canvas, data, color){
+
   if(!canvas) return;
   var dpr = window.devicePixelRatio || 1;
   var w = canvas.clientWidth || 600;

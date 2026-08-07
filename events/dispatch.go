@@ -6,6 +6,7 @@ import (
 	"runtime/debug"
 	"sync"
 	"time"
+	"unsafe"
 )
 
 // EmitBus dispatches event synchronously on the given bus and returns
@@ -50,11 +51,16 @@ func emitCtx[T any](b *Bus, stdctx context.Context, event T) error {
 
 	mw := b.middlewares()
 
+	// One atomic load per dispatch. When nothing is attached this is the
+	// only cost the observability layer imposes, and obs is threaded
+	// through the rest of the dispatch so no further loads are needed.
+	obs := b.observer()
+
 	e := b.lookup(typeKey[T]())
 	if e == nil {
 		// Nothing to do and nobody watching: this is the common case for
 		// an event nobody listens to, and it costs one map lookup.
-		if len(mw) == 0 {
+		if len(mw) == 0 && obs == nil {
 			return nil
 		}
 		// Middleware still runs for an event with no listeners, because a
@@ -63,7 +69,7 @@ func emitCtx[T any](b *Bus, stdctx context.Context, event T) error {
 		e = entryFor[T](b)
 	}
 	snap := e.ch.(*channel[T]).load()
-	if len(snap) == 0 && len(mw) == 0 {
+	if len(snap) == 0 && len(mw) == 0 && obs == nil {
 		return nil
 	}
 
@@ -74,9 +80,21 @@ func emitCtx[T any](b *Bus, stdctx context.Context, event T) error {
 	var ran int
 	var stopped bool
 
+	if obs != nil {
+		b.notifyStart(obs, DispatchInfo{
+			EventID:       ctx.EventID,
+			EventName:     ctx.EventName,
+			Time:          start,
+			CorrelationID: ctx.CorrelationID,
+			RequestID:     ctx.RequestID,
+			ListenerCount: len(snap),
+			PayloadSize:   int(unsafe.Sizeof(event)),
+		})
+	}
+
 	err := runChain(mw, ctx, func() error {
 		var derr error
-		ran, stopped, derr = runListeners(b, e, ctx, snap, event)
+		ran, stopped, derr = runListeners(b, e, ctx, snap, event, obs)
 		return derr
 	})
 
@@ -89,7 +107,7 @@ func emitCtx[T any](b *Bus, stdctx context.Context, event T) error {
 //
 // It returns the number of listeners that actually ran, whether
 // propagation was stopped, and the resulting error.
-func runListeners[T any](b *Bus, e *entry, ctx *Context, snap []*listener[T], event T) (ran int, stopped bool, err error) {
+func runListeners[T any](b *Bus, e *entry, ctx *Context, snap []*listener[T], event T, obs Observer) (ran int, stopped bool, err error) {
 	// errs stays nil unless ContinueOnError collects more than one
 	// failure, so the common paths allocate nothing.
 	var errs []error
@@ -103,7 +121,7 @@ func runListeners[T any](b *Bus, e *entry, ctx *Context, snap []*listener[T], ev
 		}
 		ctx.index = i
 
-		lerr, skipped := invokeListener(b, e, ctx, l, event)
+		lerr, skipped := invokeListener(b, e, ctx, l, event, obs, i)
 		if skipped {
 			continue
 		}
@@ -140,13 +158,51 @@ func runListeners[T any](b *Bus, e *entry, ctx *Context, snap []*listener[T], ev
 // Recovery lives in its own function so the deferred recover is scoped to
 // a single listener: a panic unwinds only that call, and the loop in
 // runListeners survives to run the rest.
-func invokeListener[T any](b *Bus, e *entry, ctx *Context, l *listener[T], event T) (err error, skipped bool) {
+func invokeListener[T any](b *Bus, e *entry, ctx *Context, l *listener[T], event T, obs Observer, idx int) (err error, skipped bool) {
+	// panicked is set by the recovery defer below and read by the
+	// observer defer. Both are declared here so the observer sees the
+	// outcome after recovery has settled it.
+	var panicked bool
+
+	// Registered before the recovery defer so that it runs *after* it:
+	// deferred calls unwind last-in-first-out, and the observer must
+	// observe the final err/skipped values, not the mid-panic ones.
+	if obs != nil {
+		lstart := time.Now()
+		b.notifyListenerStart(obs, ListenerCall{
+			EventID:      ctx.EventID,
+			EventName:    ctx.EventName,
+			ListenerName: l.name,
+			ListenerID:   l.id,
+			Priority:     l.priority,
+			Phase:        l.phase.String(),
+			Index:        idx,
+			StartTime:    lstart,
+		})
+		defer func() {
+			b.notifyListenerEnd(obs, ListenerOutcome{
+				EventID:      ctx.EventID,
+				EventName:    ctx.EventName,
+				ListenerName: l.name,
+				ListenerID:   l.id,
+				Priority:     l.priority,
+				Phase:        l.phase.String(),
+				Index:        idx,
+				Duration:     time.Since(lstart),
+				Err:          err,
+				Panicked:     panicked,
+				Skipped:      skipped,
+			})
+		}()
+	}
+
 	defer func() {
 		r := recover()
 		if r == nil {
 			return
 		}
 
+		panicked = true
 		if b.cfg.Metrics {
 			e.stats.panics.Add(1)
 		}
@@ -178,7 +234,8 @@ func invokeListener[T any](b *Bus, e *entry, ctx *Context, l *listener[T], event
 	return err, skipped
 }
 
-// finish records metrics and history for a completed dispatch.
+// finish records metrics and history for a completed dispatch, and hands
+// the result to the observer if one is attached.
 func (b *Bus) finish(e *entry, ctx *Context, d time.Duration, start time.Time, ran int, stopped bool, err error, payload any, async bool) {
 	if b.cfg.Metrics {
 		e.stats.observe(d, start)
@@ -205,6 +262,25 @@ func (b *Bus) finish(e *entry, ctx *Context, d time.Duration, start time.Time, r
 			rec.Payload = payload
 		}
 		b.recorder.push(rec)
+	}
+
+	if obs := b.observer(); obs != nil {
+		res := DispatchResult{
+			EventID:           ctx.EventID,
+			EventName:         ctx.EventName,
+			Time:              start,
+			Duration:          d,
+			ListenersExecuted: ran,
+			Cancelled:         stopped,
+			Err:               err,
+			CorrelationID:     ctx.CorrelationID,
+			RequestID:         ctx.RequestID,
+			Async:             async,
+		}
+		if b.obsPayload.Load() {
+			res.Payload = payload
+		}
+		b.notifyEnd(obs, res)
 	}
 }
 
@@ -267,6 +343,20 @@ func emitAsync[T any](b *Bus, stdctx context.Context, event T, wg *sync.WaitGrou
 	ctx.pooled = false
 	start := ctx.Time
 
+	obs := b.observer()
+	if obs != nil {
+		b.notifyStart(obs, DispatchInfo{
+			EventID:       ctx.EventID,
+			EventName:     ctx.EventName,
+			Time:          start,
+			CorrelationID: ctx.CorrelationID,
+			RequestID:     ctx.RequestID,
+			ListenerCount: len(snap),
+			PayloadSize:   int(unsafe.Sizeof(event)),
+			Async:         true,
+		})
+	}
+
 	scheduled := 0
 	for _, l := range snap {
 		if ctx.Cancelled() {
@@ -291,7 +381,7 @@ func emitAsync[T any](b *Bus, stdctx context.Context, event T, wg *sync.WaitGrou
 			if wg != nil {
 				defer wg.Done()
 			}
-			runAsyncListener(b, e, ctx, lst, event)
+			runAsyncListener(b, e, ctx, lst, event, obs)
 		}
 		if wg != nil {
 			wg.Add(1)
@@ -334,12 +424,49 @@ func (b *Bus) schedule(task func()) bool {
 //
 // It is a free function rather than a method because Go does not permit
 // type parameters on methods.
-func runAsyncListener[T any](b *Bus, e *entry, ctx *Context, l *listener[T], event T) {
+func runAsyncListener[T any](b *Bus, e *entry, ctx *Context, l *listener[T], event T, obs Observer) {
+	var panicked bool
+	var lstart time.Time
+
+	// Registered first so it unwinds last and sees the settled outcome.
+	if obs != nil {
+		lstart = time.Now()
+		b.notifyListenerStart(obs, ListenerCall{
+			EventID:      ctx.EventID,
+			EventName:    ctx.EventName,
+			ListenerName: l.name,
+			ListenerID:   l.id,
+			Priority:     l.priority,
+			Phase:        l.phase.String(),
+			Index:        -1, // async listeners have no ordered position
+			StartTime:    lstart,
+		})
+	}
+
+	var lerr error
+	if obs != nil {
+		defer func() {
+			b.notifyListenerEnd(obs, ListenerOutcome{
+				EventID:      ctx.EventID,
+				EventName:    ctx.EventName,
+				ListenerName: l.name,
+				ListenerID:   l.id,
+				Priority:     l.priority,
+				Phase:        l.phase.String(),
+				Index:        -1, // async: no deterministic position
+				Duration:     time.Since(lstart),
+				Err:          lerr,
+				Panicked:     panicked,
+			})
+		}()
+	}
+
 	defer func() {
 		r := recover()
 		if r == nil {
 			return
 		}
+		panicked = true
 		if b.cfg.Metrics {
 			e.stats.panics.Add(1)
 		}
@@ -365,6 +492,7 @@ func runAsyncListener[T any](b *Bus, e *entry, ctx *Context, l *listener[T], eve
 	// ctx.index is not set: goroutines share the Context and would race
 	// on it. Async listeners have no meaningful position anyway.
 	err := l.fn(ctx, event)
+	lerr = err
 	if err == nil {
 		return
 	}

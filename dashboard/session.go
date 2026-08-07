@@ -27,9 +27,33 @@ type sessionEntry struct {
 }
 
 func newSessionStore() *sessionStore {
-	return &sessionStore{
+	s := &sessionStore{
 		sessions: make(map[string]sessionEntry),
 	}
+	// Start a background goroutine to periodically clean expired sessions.
+	go s.cleanupLoop()
+	return s
+}
+
+// cleanupLoop runs in the background and removes expired sessions every 10 minutes.
+func (s *sessionStore) cleanupLoop() {
+	ticker := time.NewTicker(10 * time.Minute)
+	defer ticker.Stop()
+	for range ticker.C {
+		s.cleanup()
+	}
+}
+
+// cleanup removes all expired sessions. Called periodically by cleanupLoop.
+func (s *sessionStore) cleanup() {
+	now := time.Now()
+	s.mu.Lock()
+	for token, entry := range s.sessions {
+		if now.After(entry.expires) {
+			delete(s.sessions, token)
+		}
+	}
+	s.mu.Unlock()
 }
 
 // create generates a new session token for username and stores it.

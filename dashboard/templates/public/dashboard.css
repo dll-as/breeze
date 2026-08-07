@@ -239,7 +239,26 @@ pre{background:var(--bg);padding:12px;border-radius:var(--r-sm);overflow:auto;bo
 .arch-card .pool-bar .fill.high{background:var(--err)}
 .arch-card .pool-bar .fill.med{background:var(--warn)}
 
+.ev-warn{padding:14px 16px;border:1px dashed var(--warn);border-radius:var(--r);color:var(--warn);font-size:12px;margin-bottom:16px;background:rgba(210,153,34,.06)}
+.ev-warn code{font-family:var(--mono);background:var(--surface2);padding:1px 6px;border-radius:4px;color:var(--text)}
+.ev-badge{display:inline-block;padding:2px 8px;border-radius:12px;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.3px}
+.ev-badge.ok{background:rgba(63,185,80,.15);color:var(--green);border:1px solid rgba(63,185,80,.3)}
+.ev-badge.err{background:rgba(248,81,73,.15);color:var(--red);border:1px solid rgba(248,81,73,.3)}
+.ev-badge.stop{background:rgba(210,153,34,.15);color:var(--yellow);border:1px solid rgba(210,153,34,.3)}
+.ev-row{cursor:pointer}
+.ev-row:hover td{background:rgba(88,166,255,.04)}
+.ev-payload{max-width:420px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:var(--mono);font-size:11px;color:var(--text-dim)}
+.ev-tab{background:none;border:none;color:var(--text-dim);cursor:pointer;font-size:12px;padding:4px 0;border-bottom:2px solid transparent}
+.ev-tab.active{color:var(--text);border-bottom-color:var(--primary)}
+.ev-mon{font-family:var(--mono);font-size:11px;color:var(--text-dim);white-space:nowrap}
+.ev-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:14px 16px}
+.ev-card h4{margin:0 0 10px;font-size:12px;color:var(--text-dim);font-weight:600;text-transform:uppercase;letter-spacing:.4px}
+.ev-key{font-family:var(--mono);font-size:11px;color:var(--text-dim)}
+.ev-dur{font-family:var(--mono);font-size:11px}
+.ev-dur.slow{color:var(--warn)}
+
 .empty{padding:40px;text-align:center;color:var(--text-muted);font-size:12px}
+
 .empty .icon{font-size:36px;opacity:.3;margin-bottom:10px}
 
 ::-webkit-scrollbar{width:8px;height:8px}
