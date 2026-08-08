@@ -179,22 +179,22 @@ func (b *Breeze) handleWSTraffic(c gnet.Conn, state *wsConnState) gnet.Action {
 		case wsOpPing:
 			// RFC 6455 §5.5.2: respond with Pong, same payload.
 			pong := buildWSFrame(wsOpPong, frame.payload)
-			wsFramePool.Put(frame)
+			frame.release()
 			_ = c.AsyncWrite(pong, nil)
 
 		case wsOpPong:
 			// Unsolicited pong — ignore per spec.
-			wsFramePool.Put(frame)
+			frame.release()
 
 		case wsOpClose:
 			// FIX: Use frame.payload BEFORE returning frame to the pool.
-			// The original code called wsFramePool.Put(frame) and then
+			// The original code called frame.release() and then
 			// read frame.payload to build the echo — a use-after-free
 			// because parseWSFrame may have reused the pooled *wsFrame
 			// and overwritten its payload slice.
 			code, reason := parseClosePayload(frame.payload)
 			echo := buildWSFrame(wsOpClose, frame.payload)
-			wsFramePool.Put(frame)
+			frame.release()
 			_ = c.AsyncWrite(echo, nil)
 			b.cleanupWS(fd, wc, state.handler, code, reason)
 			return gnet.Close
@@ -209,7 +209,7 @@ func (b *Breeze) handleWSTraffic(c gnet.Conn, state *wsConnState) gnet.Action {
 			// Unknown opcode — close with 1003 Unsupported Data.
 			wc.Close(1003, "unsupported opcode")
 			b.cleanupWS(fd, wc, state.handler, 1003, "unsupported opcode")
-			wsFramePool.Put(frame)
+			frame.release()
 			return gnet.Close
 		}
 	}
@@ -236,14 +236,14 @@ func (b *Breeze) handleDataFrame(wc *WSConn, state *wsConnState, frame *wsFrame)
 		// Complete single-frame message — fast path, no fragBuf allocation.
 		payload := frame.payload
 		opcode := frame.opcode
-		wsFramePool.Put(frame)
+		frame.release()
 		b.dispatchMessage(wc, state.handler, opcode, payload)
 		return
 	}
 	// Begin fragmented message.
 	wc.fragOp = frame.opcode
 	wc.fragBuf = append(wc.fragBuf[:0], frame.payload...)
-	wsFramePool.Put(frame)
+	frame.release()
 }
 
 // handleContinuation appends a continuation frame to the in-progress message.
@@ -254,11 +254,11 @@ func (b *Breeze) handleContinuation(wc *WSConn, state *wsConnState, frame *wsFra
 		copy(payload, wc.fragBuf)
 		wc.fragBuf = wc.fragBuf[:0]
 		opcode := wc.fragOp
-		wsFramePool.Put(frame)
+		frame.release()
 		b.dispatchMessage(wc, state.handler, opcode, payload)
 		return
 	}
-	wsFramePool.Put(frame)
+	frame.release()
 }
 
 // dispatchMessage routes a complete message to the handler via the worker pool.
