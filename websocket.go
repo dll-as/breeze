@@ -50,6 +50,19 @@ var wsFramePool = sync.Pool{
 	New: func() any { return &wsFrame{} },
 }
 
+// Release resets the frame and returns it to the pool.
+// After calling Release, the frame must not be used anymore.
+func (f *wsFrame) Release() {
+	if f == nil {
+		return
+	}
+
+	f.opcode = 0
+	f.fin = false
+	f.payload = nil
+	wsFramePool.Put(f)
+}
+
 // ─── Handshake ────────────────────────────────────────────────────────────────
 
 // wsHandshakeResponse builds a minimal RFC 6455 upgrade response.
