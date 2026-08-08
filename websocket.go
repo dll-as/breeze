@@ -50,9 +50,9 @@ var wsFramePool = sync.Pool{
 	New: func() any { return &wsFrame{} },
 }
 
-// Release resets the frame and returns it to the pool.
+// release resets the frame and returns it to the pool.
 // After calling Release, the frame must not be used anymore.
-func (f *wsFrame) Release() {
+func (f *wsFrame) release() {
 	if f == nil {
 		return
 	}
