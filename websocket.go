@@ -206,7 +206,7 @@ func unmaskXOR(p []byte, key [4]byte) {
 	}
 	// Remaining bytes
 	for ; i < len(p); i++ {
-		p[i] ^= key[i%4]
+		p[i] ^= key[i&3]
 	}
 }
 
